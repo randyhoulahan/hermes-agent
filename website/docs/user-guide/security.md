@@ -23,11 +23,60 @@ The security model has eight layers:
 
 ## Dangerous Command Approval
 
-Before executing any command, Hermes checks it against a curated list of dangerous patterns. If a match is found, the user must explicitly approve it.
+Hermes checks terminal commands for dangerous patterns and security findings.
+Flagged commands go through the applicable approval policy; a match does not
+always mean a manual prompt.
+
+### Diagnose repeated prompts first
+
+Before changing security settings, identify the **affected session's profile and
+effective Hermes home**. In its tool environment, inspect only `HERMES_HOME`
+(without dumping secrets or the full environment):
+
+```bash
+python -c "import os; print('HERMES_HOME=' + os.environ.get('HERMES_HOME', '<unset>'))"
+```
+
+Then replace `PROFILE` with the confirmed profile name and read its configured
+mode on the backend where the prompt occurred:
+
+```bash
+hermes --profile PROFILE config get approvals.mode
+```
+
+Do not assume another shell's selected profile is the affected one. The runtime
+resolves a context-local home override before `HERMES_HOME`, then the platform
+default; a routed gateway turn can differ from the process environment. A local
+CLI query cannot diagnose a remote desktop backend, and config output alone does
+not show hosted-room policy overrides or session YOLO state. YAML may display bare
+`off` as `false`; the approval layer normalizes that boolean to `off`.
+
+Classify the prompt before proposing a fix:
+
+- **Ordinary command/code approval:** terminal findings and gateway/ask
+  `execute_code` whole-script approval consult the effective approval mode before
+  prompting. Desktop `HERMES_EXEC_ASK=1` selects the gateway approval transport;
+  it does **not** override effective mode `off` to force a prompt.
+- **Shell-hook consent:** “Allow this hook to run?” is separate registration
+  consent, stored in `shell-hooks-allowlist.json` under the effective Hermes home.
+  `hermes --profile PROFILE hooks list` inspects status without executing hooks;
+  keep commands/webhook URLs private or redact them before sharing. Do not use
+  `hooks test`, auto-accept hooks, or clear consent as a diagnostic probe.
+- **Context overrides:** reconcile routed profile and hosted-room execution
+  policy, launch-time YOLO and session-scoped YOLO, plus the matching cron,
+  single-query, or unattended policy below. Do not toggle `/yolo` just to inspect
+  it. These unattended policies are not mandatory-prompt overrides of `off`.
+
+Report the observed setting without claiming to have changed it. If config says
+`off` but an ordinary prompt persists, collect sanitized prompt text, tool name,
+session identifier, and installed version, then resolve the context mismatch or
+produce a reproduction. Do not promise all dialogs are disabled or lower security
+to conceal the symptom.
 
 ### Approval Modes
 
-The approval system supports three modes, configured via `approvals.mode` in `~/.hermes/config.yaml`:
+The approval system supports three modes, configured via `approvals.mode` in the
+active profile's `config.yaml` (under its effective Hermes home):
 
 ```yaml
 approvals:
@@ -56,10 +105,12 @@ The full set of keys:
 |------|----------|
 | **smart** (default) | Use an auxiliary LLM to assess risk. Low-risk commands (e.g., `python -c "print('hello')"`) are auto-approved for that command only. Genuinely dangerous commands are auto-denied. Uncertain cases escalate to a manual prompt. |
 | **manual** | Always prompt the user for approval on dangerous commands. |
-| **off** | Disable all approval checks — equivalent to running with `--yolo`. All commands execute without prompts. |
+| **off** | Bypass ordinary command/code approval, like `--yolo`; not all safety checks or consent dialogs. |
 
 :::warning
-Setting `approvals.mode: off` disables all safety prompts. Use only in trusted environments (CI/CD, containers, etc.).
+Setting `approvals.mode: off` removes the ordinary command/code approval layer.
+It does not grant shell-hook consent or disable secret redaction, hardline blocks,
+or `approvals.deny` rules. Do not enable it as a troubleshooting shortcut.
 :::
 
 ### YOLO Mode
@@ -80,7 +131,9 @@ The `/yolo` command is a **toggle** — each use flips the mode on or off:
   ⚠ YOLO mode OFF — dangerous commands will require approval.
 ```
 
-YOLO mode is available in both CLI and gateway sessions. Internally, it sets the `HERMES_YOLO_MODE` environment variable which is checked before every command execution.
+YOLO mode is available in both CLI and gateway sessions. The approval layer
+combines a launch-time `HERMES_YOLO_MODE` snapshot with session-scoped YOLO state;
+a config query from a new process does not reveal the running session's state.
 
 When YOLO is active, Hermes shows two persistent visual reminders so it's hard to forget that approval prompts are bypassed:
 
