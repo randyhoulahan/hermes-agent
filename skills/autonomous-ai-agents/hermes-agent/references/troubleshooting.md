@@ -1,5 +1,27 @@
 # Troubleshooting
 
+## Start with scope and failure stage
+
+**Diagnosis-only / preserve active sessions:** use existing, bounded logs,
+allowlisted non-secret settings, source reads, and process metadata only. The
+recovery commands below are not permission to reproduce the problem, switch
+profiles, refresh providers/models, run chat/doctor/setup probes, change settings,
+load/unload models, reset sessions, reload windows, or restart services. Defer
+those actions until separately authorized. Do not dump credentials, full configs,
+process environments, or raw log bundles.
+
+### Desktop “Waking up…” / profile activation fails
+
+Before provider or credential probes, read
+[Passive Desktop profile-activation diagnosis](desktop-profile-activation.md).
+`Local backend start ... timed out while waiting for a free slot` is a local
+backend-capacity failure before that attempt spawns a profile backend, not an
+inference timeout. Cloud-model profiles still need a local Hermes backend when
+Desktop routes them locally; remote connection descriptors do not use this pool.
+Correlate timestamps, occupancy, request priority, and later readiness before
+calling saturation a slot leak. Report historical evidence separately from
+current state; successful activation alone does not establish provider health.
+
 ### Voice not working
 1. Check `stt.enabled: true` in config.yaml
 2. Verify provider: `pip install faster-whisper` or set API key
