@@ -2659,6 +2659,9 @@ export interface Translations {
       controlUnavailable: (msg: string) => string
       dismissError: string
       add: string
+      copyDetails?: string
+      showDetails?: string
+      hideDetails?: string
     }
     coding: {
       title: string

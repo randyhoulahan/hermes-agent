@@ -380,4 +380,44 @@ describe('ComposerStatusStack session-control UI', () => {
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText(/continuation queued/i)).toBeTruthy()
   })
+
+  it('exposes expandable details and copy action for long session control errors (#1141)', async () => {
+    const longError =
+      'Session owner could not be resolved from active gateway session-owner-resolution store. Missing owner metadata prevents routing to an arbitrary active gateway.'
+
+    $sessionControlBySession.set({
+      [SID]: mockEntry({
+        error: longError,
+        snapshot: sampleSnapshot()
+      })
+    })
+
+    renderStack()
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toBeTruthy()
+    expect(alert.textContent).toContain('Session controls unavailable:')
+
+    // Expand details button is present and keyboard-accessible
+    const expandButton = screen.getByRole('button', { name: /show details|expand/i })
+    expect(expandButton).toBeTruthy()
+    expect(expandButton.getAttribute('aria-expanded')).toBe('false')
+
+    // Click to expand details
+    fireEvent.click(expandButton)
+    expect(expandButton.getAttribute('aria-expanded')).toBe('true')
+
+    // Expanded view contains full diagnostic text
+    expect(alert.textContent).toContain(longError)
+
+    // Copy details button is present
+    const copyButton = screen.getByRole('button', { name: /copy details|copy/i })
+    expect(copyButton).toBeTruthy()
+
+    // Dismiss button is accessible while expanded
+    const dismissButton = screen.getByRole('button', { name: /dismiss error/i })
+    expect(dismissButton).toBeTruthy()
+    fireEvent.click(dismissButton)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 })

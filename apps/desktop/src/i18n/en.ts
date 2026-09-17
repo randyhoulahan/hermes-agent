@@ -3084,7 +3084,10 @@ export const en: Translations = {
       continuationBusy: 'Goal resumed — session busy, /interrupt the current turn to continue',
       controlUnavailable: msg => `Session controls unavailable: ${msg}`,
       dismissError: 'Dismiss error',
-      add: 'Add'
+      add: 'Add',
+      copyDetails: 'Copy details',
+      showDetails: 'Show details',
+      hideDetails: 'Hide details'
     },
     coding: {
       title: 'Working tree',
