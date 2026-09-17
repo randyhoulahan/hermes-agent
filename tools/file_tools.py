@@ -533,7 +533,7 @@ def _record_successful_read(task_data: dict, task_id: str, path: str, resolved_s
     return count
 
 
-def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, task_id: str = "default") -> str:
+def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, task_id: str = "default", dedup: bool = True) -> str:
     """Read a file with pagination and line numbers.
 
     Guard order: device-path blocklist (no I/O) → stat-based special-file
@@ -595,7 +595,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
             # First unchanged read after a compaction boundary serves full content
             # (the summary may have dropped exact bytes); later ones get the stub.
             content_served_in_generation = dedup_key in task_data["dedup_generation_reads"]
-        if cached_mtime is not None:
+        if dedup and cached_mtime is not None:
             try:
                 if os.path.getmtime(resolved_str) == cached_mtime and content_served_in_generation:
                     return _dedup_stub_or_block(task_data, dedup_key, path)
@@ -1029,7 +1029,8 @@ READ_FILE_SCHEMA = {
         "properties": {
             "path": {"type": "string", "description": "Path to the file to read (absolute, relative, or ~/path)"},
             "offset": {"type": "integer", "description": "Line number to start reading from (1-indexed, default: 1)", "default": 1, "minimum": 1},
-            "limit": {"type": "integer", "description": "Maximum number of lines to read (default: 2000, max: 2000). Reads are additionally capped at a ~100K-character budget with a next_offset continuation.", "default": DEFAULT_READ_LIMIT, "maximum": 2000}
+            "limit": {"type": "integer", "description": "Maximum number of lines to read (default: 2000, max: 2000). Reads are additionally capped at a ~100K-character budget with a next_offset continuation.", "default": DEFAULT_READ_LIMIT, "maximum": 2000},
+            "dedup": {"type": "boolean", "description": "Whether to return a lightweight deduplication stub if unchanged (default: true for conversational model calls). Programmatic callers may set false to guarantee content is returned.", "default": True}
         },
         "required": ["path"]
     }
@@ -1173,7 +1174,8 @@ SEARCH_FILES_SCHEMA = {
 
 def _handle_read_file(args, **kw):
     tid = kw.get("task_id") or "default"
-    return read_file_tool(path=args.get("path", ""), offset=args.get("offset", 1), limit=args.get("limit", DEFAULT_READ_LIMIT), task_id=tid)
+    dedup = args.get("dedup", True)
+    return read_file_tool(path=args.get("path", ""), offset=args.get("offset", 1), limit=args.get("limit", DEFAULT_READ_LIMIT), task_id=tid, dedup=dedup)
 
 
 def _handle_write_file(args, **kw):
