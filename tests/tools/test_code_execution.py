@@ -484,6 +484,30 @@ class TestStubSchemaDrift(unittest.TestCase):
         # patch must accept mode and patch params
         self.assertIn("mode", src)
 
+    def test_handle_rpc_request_defaults_read_file_dedup_false(self):
+        """_handle_rpc_request sets dedup=False on read_file calls by default."""
+        from tools.code_execution_rpc import _handle_rpc_request
+        calls = []
+
+        def dummy_dispatch(name, args):
+            calls.append((name, dict(args)))
+            return "{}"
+
+        req = {"tool": "read_file", "args": {"path": "foo.py"}}
+        _handle_rpc_request(
+            req,
+            allowed_tools=frozenset({"read_file"}),
+            tool_call_counter=[0],
+            max_tool_calls=5,
+            dispatch=dummy_dispatch,
+            tool_call_log=[],
+            call_start=0.0,
+            where="test",
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1].get("dedup"), False)
+
+
 
 # ---------------------------------------------------------------------------
 # build_execute_code_schema

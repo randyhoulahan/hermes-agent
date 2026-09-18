@@ -423,6 +423,33 @@ class TestFileDedup(unittest.TestCase):
         self.assertNotIn("content", r2)
 
     @patch("tools.file_tools._get_file_ops")
+    def test_dedup_false_returns_content_on_repeated_reads(self, mock_ops):
+        """When dedup=False, repeated reads return full content instead of stub."""
+        mock_ops.return_value = _make_fake_ops(
+            content="line one\nline two\n", file_size=20,
+        )
+        r1 = json.loads(read_file_tool(self._tmpfile, task_id="dup_false", dedup=False))
+        self.assertIn("content", r1)
+        self.assertNotIn("dedup", r1)
+
+        r2 = json.loads(read_file_tool(self._tmpfile, task_id="dup_false", dedup=False))
+        self.assertIn("content", r2)
+        self.assertNotIn("dedup", r2)
+        self.assertNotEqual(r2.get("status"), "unchanged")
+
+    @patch("tools.file_tools._get_file_ops")
+    def test_handle_read_file_passes_dedup_false(self, mock_ops):
+        """_handle_read_file passes dedup=False through to read_file_tool."""
+        from tools.file_tools import _handle_read_file
+        mock_ops.return_value = _make_fake_ops(
+            content="line one\nline two\n", file_size=20,
+        )
+        _handle_read_file({"path": self._tmpfile, "dedup": False}, task_id="dup_handler")
+        r2 = json.loads(_handle_read_file({"path": self._tmpfile, "dedup": False}, task_id="dup_handler"))
+        self.assertIn("content", r2)
+        self.assertNotIn("dedup", r2)
+
+    @patch("tools.file_tools._get_file_ops")
     def test_write_rejects_internal_read_status_text(self, mock_ops):
         """write_file must not persist internal read_file status text."""
         fake = MagicMock()

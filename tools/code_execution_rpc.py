@@ -54,6 +54,8 @@ def _handle_rpc_request(request: dict, *, allowed_tools: frozenset, tool_call_co
     if tool_name == "terminal" and isinstance(tool_args, dict):
         for param in _TERMINAL_BLOCKED_PARAMS:
             tool_args.pop(param, None)
+    if tool_name == "read_file" and isinstance(tool_args, dict):
+        tool_args.setdefault("dedup", False)
     # Silence handler status prints so they don't leak into the CLI spinner.
     try:
         with thread_scoped_silence():
