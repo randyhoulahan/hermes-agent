@@ -692,7 +692,7 @@ class TestReadFileToolIntegration(unittest.TestCase):
                 )
 
             @staticmethod
-            def _add_line_numbers(content, start_line=1):
+            def _add_line_numbers(content, start_line=1, clip_log=None):
                 return "\n".join(
                     f"{number}|{line}"
                     for number, line in enumerate(content.split("\n"), start_line)
