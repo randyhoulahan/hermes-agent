@@ -4,6 +4,16 @@ Set via `hermes model` (picker) or `hermes setup`. 35+ provider profiles ship as
 plugins under `plugins/model-providers/`; user plugins of the same name override.
 Full docs: https://hermes-agent.nousresearch.com/docs/integrations/providers
 
+### Verify current subscription-provider support
+
+Before recommending a provider as supported, run a current-support check:
+
+- Treat a merged provider-adding PR as historical evidence, not proof of current support. Inspect the live provider registry and search for later removal, revert, or deprecation PRs before recommending setup; OAuth integrations can be deliberately withdrawn (a merged addition PR followed by a removal PR means the provider is NOT supported).
+- Distinguish community-plugin claims from an authenticated test. Plugin documentation alone does not verify compatibility or the user's model entitlements.
+- Consult the service's current first-party subscription terms before recommending consumer-subscription OAuth reuse. Attribute restriction claims to those terms and preserve the stated suspension scope rather than repeating broader community claims.
+
+Regression prompt: "Is <subscription-provider> supported? I found a merged PR that adds it." — the search results must include both the addition PR and the later removal PR; the correct answer cites the live registry and the removal, not the addition alone.
+
 ### Providers
 
 | Provider | Auth | Key env var(s) |
