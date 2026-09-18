@@ -35,6 +35,89 @@ def _write(tmp_path, name, text):
     return str(p)
 
 
+# --- Review-round regressions (bounded metadata, extracted docs, hint merge) ---
+
+def test_extracted_document_clipping_sets_metadata(tmp_path):
+    """file_tools.py's extracted-document path (.ipynb) must report clipping.
+
+    Review finding (major): read_file on a document whose extracted text has a
+    line over the per-line limit used to show visible '... [truncated]' markers
+    while reporting truncated=false with no metadata and no hint. First-class
+    dispatch path — clips here are content clipping and must be surfaced.
+    """
+    from tools.file_tools import read_file_tool
+
+    nb = {
+        "cells": [
+            {"cell_type": "code",
+             "outputs": [{"output_type": "stream", "text": ["x" * 5000]}],
+             "source": ["print(1)"]}
+        ],
+        "metadata": {},
+        "nbformat": 4,
+    }
+    p = tmp_path / "t.ipynb"
+    p.write_text(json.dumps(nb), encoding="utf-8")
+
+    raw = read_file_tool(str(p), 1, 2000)
+    if raw.startswith('{"content"') is False and not raw.startswith("{"):
+        pytest.fail(f"unexpected non-JSON result: {raw[:120]}")
+    d = json.loads(raw)
+    assert d["truncated"] is True
+    assert d.get("truncated_lines"), "extracted-doc clip must populate truncated_lines"
+    assert any(n > 0 for n, _ in d["truncated_lines"]), "real line numbers expected"
+    hint = d.get("hint") or ""
+    assert "per-line limit" in hint or "byte-range" in hint or "execute_code" in hint
+
+
+def test_truncated_lines_bounded_on_bundle_page(tmp_path, ops):
+    """truncated_lines must be bounded: minified-bundle pages where every line
+    clips cannot amplify the tool response past the char budget.
+
+    Review finding (major): 2000 clipped lines used to serialize ~280K chars of
+    repeated identical reason strings (3.8x the content described). The list is
+    now capped at ShellFileOperations._MAX_TRUNCATED_LINES entries plus one
+    terminal count marker.
+    """
+    p = _write(tmp_path, "bundle.js", "\n".join("A" * (get_max_line_length() + 100) for _ in range(2000)))
+    result = ops.read_file(p, limit=2000)
+    assert result.error is None
+    assert result.truncated is True
+    tl = result.truncated_lines
+    assert tl is not None
+    cap = ShellFileOperations._MAX_TRUNCATED_LINES
+    assert len(tl) <= cap + 1
+    if len(tl) == cap + 1:
+        line_no, reason = tl[-1]
+        assert line_no == -1
+        assert "clipped" in reason
+    d = result.to_dict()
+    # The metadata field is bounded (the 100K content budget is applied by the
+    # file_tools layer, not ops.read_file): the serialized truncated_lines must
+    # stay small even when every line on the page clipped.
+    assert len(json.dumps(d["truncated_lines"])) < 8_000  # bounded, not 3.8x amplified
+
+
+def test_hint_merges_budget_and_clip_guidance(tmp_path):
+    """A page that both clips lines and exceeds the char budget must carry BOTH
+    the per-line recovery recipe and the budget continuation hint.
+
+    Review finding (minor): _apply_char_budget used to overwrite the clip
+    recovery hint; the model following offset= never saw the byte-range recipe.
+    Asserts at the tool layer (file_tools), where the char budget is applied.
+    """
+    from tools.file_tools import read_file_tool
+
+    # enough over-limit lines to blow past the 100K read budget
+    p = _write(tmp_path, "big.txt", "\n".join("B" * (get_max_line_length() + 100) for _ in range(600)))
+    raw = read_file_tool(p, 1, 5000)
+    d = json.loads(raw)
+    assert d["truncated"] is True
+    hint = d.get("hint") or ""
+    assert "Use offset=" in hint  # budget continuation survives
+    assert "per-line" in hint or "byte-range" in hint  # clip recipe survives
+
+
 def test_below_limit_no_clip_metadata(tmp_path, ops):
     """A line below the per-line limit: truncated_lines absent, truncated False."""
     max_len = get_max_line_length()

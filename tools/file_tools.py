@@ -97,14 +97,20 @@ def _apply_char_budget(result_dict: dict, content: str, offset: int, total_lines
     result_dict["truncated"] = True
     result_dict["truncated_by"] = "bytes"
     result_dict["next_offset"] = next_offset
-    result_dict["hint"] = (
+    budget_hint = (
         f"Output truncated at the {max_chars:,}-char read budget after "
         f"{lines_kept} line(s) (showing lines {offset}-{next_offset - 1} of "
         f"{total_lines}). Use offset={next_offset} to continue.")
     if len(trimmed.split("\n", 1)[0]) >= max_chars:
-        result_dict["hint"] += (
+        budget_hint += (
             " Note: the first line alone exceeded the budget and was "
             "clamped mid-line; its remainder is not retrievable via offset.")
+    # Append, not overwrite: per-line clipping recovery guidance must survive
+    # budget trimming (a page can both clip lines and exceed the char budget).
+    if result_dict.get("hint"):
+        result_dict["hint"] = f'{result_dict["hint"]} {budget_hint}'
+    else:
+        result_dict["hint"] = budget_hint
     return trimmed
 
 
@@ -444,16 +450,41 @@ def _read_extracted_document(path: str, _resolved, offset: int, limit: int, task
     total_lines = len(lines)
     end_line = offset + limit - 1
     page_text = "\n".join(lines[offset - 1:end_line])
-    result_dict = {
-        "content": file_ops._add_line_numbers(page_text, offset) if page_text else "",
-        "total_lines": total_lines,
-        "file_size": binary.file_size,
-        "truncated": total_lines > end_line,
-        "extracted_document": True}
-    if result_dict["truncated"]:
-        result_dict["hint"] = (
+    clip_log: list = []
+    rendered = (file_ops._add_line_numbers(page_text, offset, clip_log)
+                if page_text else "")
+    truncated = total_lines > end_line
+    hint_parts: list = []
+    if truncated:
+        hint_parts.append(
             f"Use offset={end_line + 1} to continue reading "
             f"(showing {offset}-{min(end_line, total_lines)} of {total_lines} lines)")
+    if clip_log:
+        truncated = True
+        line_nos = sorted({n for n, _ in clip_log})
+        lines_desc = ", ".join(str(n) for n in line_nos[:3]) + (
+            f" (+{len(line_nos) - 3} more)" if len(line_nos) > 3 else "")
+        reason = clip_log[0][1]
+        hint_parts.append(
+            f"Line(s) {lines_desc} exceed the per-line limit and were clipped "
+            f"({reason}). Use terminal byte-range reads or execute_code to "
+            f"extract long lines losslessly.")
+        result_dict = {
+            "content": rendered,
+            "total_lines": total_lines,
+            "file_size": binary.file_size,
+            "truncated": truncated,
+            "truncated_lines": file_ops._bound_clip_log(clip_log),
+            "extracted_document": True}
+    else:
+        result_dict = {
+            "content": rendered,
+            "total_lines": total_lines,
+            "file_size": binary.file_size,
+            "truncated": truncated,
+            "extracted_document": True}
+    if hint_parts:
+        result_dict["hint"] = " ".join(hint_parts)
     max_chars = _get_max_read_chars()
     if len(result_dict["content"]) > max_chars:
         _apply_char_budget(result_dict, result_dict["content"], offset, total_lines, max_chars)

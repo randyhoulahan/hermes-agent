@@ -346,6 +346,24 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return (f"line exceeded the per-line display limit of {max_len} chars; "
                 f"only the first {max_len} chars were returned (rendered with '... [truncated]')")
 
+    # Cap on serialized truncated_lines entries; the remainder is collapsed into
+    # the (line_no, reason) shape's bounded head plus a count, and the hint already
+    # summarizes the overflow ("... (+N more)"), so a minified-bundle page where
+    # every line clips cannot amplify the tool response past the char budget.
+    _MAX_TRUNCATED_LINES = 25
+
+    @classmethod
+    def _bound_clip_log(cls, clip_log: list) -> list:
+        """Bound ``truncated_lines`` to the first ``_MAX_TRUNCATED_LINES`` clipped
+        lines. Later entries collapse into a terminal ``(line_no, reason)`` marker
+        entry: ``(-1, "<N> further line(s) clipped (same reason); see hint")``."""
+        if len(clip_log) <= cls._MAX_TRUNCATED_LINES:
+            return list(clip_log)
+        head = list(clip_log[:cls._MAX_TRUNCATED_LINES])
+        hidden = len(clip_log) - cls._MAX_TRUNCATED_LINES
+        head.append((-1, f"{hidden} further line(s) clipped (same reason); see hint"))
+        return head
+
     def _expand_path(self, path: str) -> str:
         """Expand ``~`` / ``~user`` via the backend's shell (its HOME, not the
         host's). Must run BEFORE shell escaping — ~ doesn't expand in quotes."""
@@ -598,7 +616,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return ReadResult(
             content=rendered, total_lines=total_lines,
             file_size=file_size, truncated=truncated, hint=" ".join(hint_parts),
-            truncated_lines=clip_log or None)
+            truncated_lines=self._bound_clip_log(clip_log) if clip_log else None)
 
     def read_file(self, path: str, offset: int = 1, limit: int = 2000) -> ReadResult:
         """Read a file with pagination, binary detection, and line numbers.
@@ -962,7 +980,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return ReadResult(
             content=rendered, total_lines=total_lines, file_size=file_size,
             truncated=truncated, hint=hint,
-            truncated_lines=clip_log or None)
+            truncated_lines=self._bound_clip_log(clip_log) if clip_log else None)
 
     # Confusable characters seen in real filenames, collapsed after NFC.
     _CONFUSABLES = (
