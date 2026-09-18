@@ -15,7 +15,7 @@ Use, configure, theme, extend, and orchestrate Hermes Agent.
 | | |
 |---|---|
 | Source | Bundled (installed by default) |
-| Path | `skills/autonomous-ai-agents\hermes-agent` |
+| Path | `skills/autonomous-ai-agents/hermes-agent` |
 | Version | `3.2.0` |
 | Author | Hermes Agent + Teknium |
 | License | MIT |
@@ -122,6 +122,7 @@ Profiles use `~/.hermes/profiles/<name>/` with the same layout. When a profile i
 | Pet mascots — install, select, scale, diagnose | `references/petdex.md` |
 | Windows-specific issues (keybinds, WinError 10106, BOM) | `references/windows-quirks.md` |
 | Debugging: voice, tools missing, gateway, aux models | `references/troubleshooting.md` |
+| Desktop profile open/switch stalls, “Waking up…”, or free-slot timeouts — passive backend diagnosis before provider probes | `references/desktop-profile-activation.md` |
 | Contributing code: adding tools, slash commands, tests | `references/contributor-guide.md` |
 | delegate_task "capped at N" reports | `references/delegate-task-concurrency-diagnosis.md` |
 | "Can app X use my Nous Portal subscription/OAuth?" | `references/portal-auth-for-third-party-apps.md` |
