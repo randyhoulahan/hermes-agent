@@ -25,6 +25,11 @@ class ReadResult:
     dimensions: Optional[str] = None  # For images: "WIDTHxHEIGHT"
     error: Optional[str] = None
     similar_files: List[str] = field(default_factory=list)
+    # Lines (1-indexed, in-file) whose rendered text was clipped by the
+    # per-line char clamp; each entry is (line_no, reason). None = no clipping.
+    # Any entry here also means truncated=True — per-line clipping is real
+    # truncation and must never read as a complete response.
+    truncated_lines: Optional[List[tuple]] = None
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None and v != []}

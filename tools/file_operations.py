@@ -306,10 +306,15 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
     def _is_image(self, path: str) -> bool:
         return os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS
 
-    def _add_line_numbers(self, content: str, start_line: int = 1) -> str:
+    def _add_line_numbers(self, content: str, start_line: int = 1,
+                          clip_log: Optional[list] = None) -> str:
         """Prefix each line with a compact ``<n>|`` gutter, clamping long lines. Not
         fixed-width: padding cost ~16% more tokens per line for no accuracy gain in
-        A/B, while dropping numbers regressed line-referencing."""
+        A/B, while dropping numbers regressed line-referencing.
+
+        ``clip_log`` (optional, mutated in place) records ``(line_no, reason)``
+        for every line clipped here, so read paths can report per-line clipping
+        in their metadata instead of leaving it visible only in the marker."""
         from tools.tool_output_limits import get_max_line_length
         max_line_length = get_max_line_length()
         # A trailing newline terminates the final line — it does not start a new,
@@ -319,9 +324,27 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         # blank line in a page keeps its own number.
         if content.endswith('\n'):
             content = content[:-1]
-        return '\n'.join(
-            f"{i}|{line if len(line) <= max_line_length else line[:max_line_length] + '... [truncated]'}"
-            for i, line in enumerate(content.split('\n'), start=start_line))
+        out = []
+        for i, line in enumerate(content.split('\n'), start=start_line):
+            if len(line) <= max_line_length:
+                out.append(f"{i}|{line}")
+            else:
+                out.append(f"{i}|{line[:max_line_length]}... [truncated]")
+                if clip_log is not None:
+                    clip_log.append((i, self._line_clip_reason()))
+        return '\n'.join(out)
+
+    @staticmethod
+    def _line_clip_reason() -> str:
+        """Reason recorded per clipped line in ``ReadResult.truncated_lines``.
+        Path-agnostic on purpose: the shell/native transports clamp bytes
+        (4*max+1) before Python clamps chars (max), and both end at the same
+        rendered marker, so the honest statement is what the consumer sees —
+        the first ``max`` chars plus a marker — not which layer cut first."""
+        from tools.tool_output_limits import get_max_line_length
+        max_len = get_max_line_length()
+        return (f"line exceeded the per-line display limit of {max_len} chars; "
+                f"only the first {max_len} chars were returned (rendered with '... [truncated]')")
 
     def _expand_path(self, path: str) -> str:
         """Expand ``~`` / ``~user`` via the backend's shell (its HOME, not the
@@ -561,9 +584,21 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             hint_parts.append(
                 f"Use offset={end_line + 1} to continue reading "
                 f"(showing {offset}-{end_line} of {total_lines} lines)")
+        clip_log: list = []
+        rendered = self._add_line_numbers(content, offset, clip_log)
+        if clip_log:
+            truncated = True
+            line_nos = sorted({n for n, _ in clip_log})
+            hint_parts.append(
+                f"Per-line clipping occurred: lines {', '.join(str(n) for n in line_nos[:3])}"
+                + (f" (+{len(line_nos) - 3} more)" if len(line_nos) > 3 else "")
+                + " were cut at the per-line display limit; recover a clipped line "
+                  "losslessly with execute_code (json.load/open) or bounded terminal "
+                  "byte-range reads.")
         return ReadResult(
-            content=self._add_line_numbers(content, offset), total_lines=total_lines,
-            file_size=file_size, truncated=truncated, hint=" ".join(hint_parts))
+            content=rendered, total_lines=total_lines,
+            file_size=file_size, truncated=truncated, hint=" ".join(hint_parts),
+            truncated_lines=clip_log or None)
 
     def read_file(self, path: str, offset: int = 1, limit: int = 2000) -> ReadResult:
         """Read a file with pagination, binary detection, and line numbers.
@@ -904,9 +939,30 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
                     f"Note: offset {offset} is beyond the end of the file "
                     f"({total_lines} lines total). Retry with offset <= "
                     f"{total_lines}."))
+        clip_log: list = []
+        rendered = self._add_line_numbers(read_output, offset, clip_log)
+        if clip_log:
+            # Per-line clipping loses data too: surface it in the same metadata
+            # a consumer already checks, with the lines and a lossless recovery
+            # path. A page can be both line-truncated and line-clipped; both
+            # hints then apply and are joined.
+            truncated = True
+            line_nos = sorted({n for n, _ in clip_log})
+            lines_desc = ", ".join(str(n) for n in line_nos[:3])
+            if len(line_nos) > 3:
+                lines_desc += f" (+{len(line_nos) - 3} more)"
+            recovery = (
+                "Per-line clipping occurred: lines " + lines_desc +
+                " were cut at the per-line display limit. To read a clipped line "
+                "in bounded chunks, use offset/limit at the byte level via the "
+                "terminal tool (e.g. `sed -n '<n>p' <file> | cut -c <start>-<stop>`), "
+                "or load the exact artifact losslessly with execute_code "
+                "(json.load/open) and return only the needed fields.")
+            hint = f"{hint}. {recovery}" if hint else recovery
         return ReadResult(
-            content=self._add_line_numbers(read_output, offset), total_lines=total_lines,
-            file_size=file_size, truncated=truncated, hint=hint)
+            content=rendered, total_lines=total_lines, file_size=file_size,
+            truncated=truncated, hint=hint,
+            truncated_lines=clip_log or None)
 
     # Confusable characters seen in real filenames, collapsed after NFC.
     _CONFUSABLES = (
